@@ -25,22 +25,27 @@ float lerp(float a, float b, float t)
 {
 	assert(t >= 0.0f && t <= 1.0f);
 		
-	return (1.0f - t) * a + b;
+	return (1.0f - t) * a + t * b;
 }
 
 u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 {
 	float x_interp = lerp(0.0, 255.0, (float)x / width);
 	float y_interp = lerp(0.0, 255.0, (float)y / height);
+
 	u32 color = 0;
 
 	u32 red = 0;
 	u32 green = (u32)x_interp;
 	u32 blue = (u32)y_interp;
 
-	color |= (red);
-	color |= (green << 2);
-	color |= (blue << 4);
+	u32 red_bits_to_shift = 16;
+	u32 green_bits_to_shift = 8;
+	u32 blue_bits_to_shift = 0;
+
+	color |= (red << red_bits_to_shift);
+	color |= (green << green_bits_to_shift);
+	color |= (blue << blue_bits_to_shift);
 
 	return color; 
 }
@@ -103,6 +108,11 @@ int main(i32 argc, char** argv)
 	for (u32 i = 0; i < work_queue.work_order_count; ++i)
 	{
 		LOG_UINT(work_queue.work_orders[i].y_start);
+	}
+
+	while (work_queue.work_order_count > work_queue.next_work_order)
+	{
+		render_strip(&work_queue, pixels, width, height);
 	}
 	writeImage(width, height, pixels, "paper.bmp");
 
