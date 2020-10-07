@@ -1,0 +1,9 @@
+#ignore everything
+*
+
+#except for:
+!.gitignore
+!main.c
+!compile.sh
+!README.md
+
