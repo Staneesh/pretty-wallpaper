@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <pthread.h>
 
 //NOTE(stanisz): requires stdio.h to be included before this line
 #include "utils.c"
@@ -16,15 +17,17 @@ struct WorkOrder
 struct WorkQueue
 {
 	u32 work_order_count;
-	u32 next_work_order;
+	volatile u32 next_work_order;
+	u32 *pixels;
+	u32 width;
+	u32 height;
+	u32 __pad;
 
 	struct WorkOrder* work_orders;
 };
 
 float lerp(float a, float b, float t)
 {
-	assert(t >= 0.0f && t <= 1.0f);
-		
 	return (1.0f - t) * a + t * b;
 }
 
@@ -50,20 +53,52 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 	return color; 
 }
 
-void render_strip(struct WorkQueue* work_queue, u32* pixels, u32 width, u32 height)
+u32 interlocked_add(volatile u32* v, u32 addend)
+{
+	return __sync_fetch_and_add(v, addend);	
+}
+
+u8 render_strip(struct WorkQueue* work_queue)
 {
 	//interlocked add, return previous.
-	struct WorkOrder current = work_queue->work_orders[work_queue->next_work_order++];
+	u32 current_work_order = interlocked_add(&work_queue->next_work_order, 1);
+	//LOG_UINT(current_work_order);
+
+	if (current_work_order >= work_queue->work_order_count)
+	{
+		//LOG_STRING("NOTHING TO DO");
+		return 0;
+	}
+	struct WorkOrder current = work_queue->work_orders[current_work_order];
 
 	for (u32 y = current.y_start; y <= current.y_end; ++y)
 	{
-		for (u32 x = 0; x < width; ++x)
+		for (u32 x = 0; x < work_queue->width; ++x)
 		{
-			u32 array_index = y * width + x;
+			u32 array_index = y * work_queue->width + x;
+			//LOG_UINT(array_index);
+			assert(array_index < work_queue->width * work_queue->height);
 
-			pixels[array_index] = get_pixel_color(x, y, width, height);
+			work_queue->pixels[array_index] = get_pixel_color(x, y, 
+					work_queue->width, work_queue->height);
 		}
 	}
+	return 1;
+}
+
+void worker_function(struct WorkQueue* work_queue)
+{
+	while (render_strip(work_queue))
+	{
+	}
+
+	//NOTE(stanisz): what does it really do? does it join?
+	pthread_exit(0);
+}
+
+void create_worker_thread(struct WorkQueue* work_queue, pthread_t *thread_ids, u32 i)
+{
+	pthread_create(&thread_ids[i], 0, (void *)&worker_function, work_queue);
 }
 
 int main(i32 argc, char** argv)
@@ -78,6 +113,9 @@ int main(i32 argc, char** argv)
 	struct WorkQueue work_queue = {};
 	//NOTE(stanisz): in pixels.
 	const u32 strip_size = 20;
+	work_queue.pixels = pixels;
+	work_queue.width = width;
+	work_queue.height = height;
 	work_queue.work_orders = (struct WorkOrder*)malloc(sizeof(struct WorkOrder) * \
 			ceil((float)height / strip_size));
 
@@ -104,15 +142,28 @@ int main(i32 argc, char** argv)
 			work_queue.work_orders[work_index] = new_order;
 		}	
 	}
-
-	for (u32 i = 0; i < work_queue.work_order_count; ++i)
+	
+#if 0
+	for(u32 i = 0; i < work_queue.work_order_count; ++i)
 	{
 		LOG_UINT(work_queue.work_orders[i].y_start);
 	}
+#endif	
+	//NOTE(stanisz): is that necessary?
+	__sync_synchronize();
 
-	while (work_queue.work_order_count > work_queue.next_work_order)
+	u32 num_threads = 1;
+
+	pthread_t thread_ids[100];
+
+	for (u32 i = 0; i < num_threads; ++i)
 	{
-		render_strip(&work_queue, pixels, width, height);
+		create_worker_thread(&work_queue, thread_ids, i);
+	}
+
+	for (u32 i = 0; i < num_threads; ++i)
+	{
+		pthread_join(thread_ids[i], 0);
 	}
 	writeImage(width, height, pixels, "paper.bmp");
 
