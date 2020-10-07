@@ -13,7 +13,7 @@ flags=""
 
 if [ $mode == "debug" ]
 then
-	flags="-O0 -Wall -Wextra -Wpedantic -Wshadow -fsanitize=undefined"	
+	flags="-O0 -Wall -Wextra -Wshadow -fsanitize=undefined"	
 elif [ $mode == "release" ]
 then
 	flags="-O3"

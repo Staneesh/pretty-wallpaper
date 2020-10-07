@@ -3,7 +3,8 @@
 
 #except for:
 !.gitignore
-!main.c
+!*.c
+!*.h
 !compile.sh
 !README.md
 
