@@ -35,7 +35,11 @@ typedef double real64;
 #define UNUSED(x) (void)(x)
 
 
+
+
 void write_image(u32 width, u32 height,
 		const u32* pixels, const i8* filename);
+
+
 
 #endif

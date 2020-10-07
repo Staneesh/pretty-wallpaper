@@ -13,10 +13,10 @@ flags=""
 
 if [ $mode == "debug" ]
 then
-	flags="-O0 -Wall -Wextra -Wshadow -fsanitize=undefined"	
+	flags="-O0 -Wall -Wextra -Wshadow -fsanitize=undefined -lm"	
 elif [ $mode == "release" ]
 then
-	flags="-O3"
+	flags="-O3 -lm"
 else
 	echo $error_message
 	exit 1
