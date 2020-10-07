@@ -6,11 +6,8 @@
 
 int main(i32 argc, char** argv)
 {
-	LOG_INT(argc);	
-	LOG_POINTER(argv);
-	LOG_FLOAT(0.213);
-	LOG_STRING("ASDADS");
-	LOG_HERE;
+	UNUSED(argc);
+	UNUSED(argv);
 
 	return 0;
 }	
