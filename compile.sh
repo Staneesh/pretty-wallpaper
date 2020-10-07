@@ -10,16 +10,17 @@ fi
 
 mode=$1
 flags=""
+common="-lm -pthread"
 
 if [ $mode == "debug" ]
 then
-	flags="-O0 -Wall -Wextra -Wshadow -fsanitize=undefined -lm"	
+	flags="-O0 -Wall -Wextra -Wshadow -fsanitize=undefined"
 elif [ $mode == "release" ]
 then
-	flags="-O3 -lm"
+	flags="-O3"
 else
 	echo $error_message
 	exit 1
 fi
 
-time gcc main.c -o main $flags
+time gcc main.c -o main $flags $common
