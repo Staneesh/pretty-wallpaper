@@ -4,6 +4,8 @@
 #include <math.h>
 #include <assert.h>
 #include <pthread.h>
+#include <limits.h>
+#include <time.h>
 
 //NOTE(stanisz): requires stdio.h to be included before this line
 #include "utils.c"
@@ -26,17 +28,87 @@ struct WorkQueue
 	struct WorkOrder* work_orders;
 };
 
+struct Color
+{
+	u8 red;
+	u8 green;
+	u8 blue;
+};
+
+#define PALETTE_SIZE 10000
+struct Color palette[PALETTE_SIZE];
+u32 RAND_SEED = 1000; 
+real32 C_REAL = -0.4f;
+real32 C_IMAGINARY = 0.6f;
+
 float lerp(float a, float b, float t)
 {
 	return (1.0f - t) * a + t * b;
+}
+
+struct Color lerp_color(struct Color* a, struct Color* b, real32 t)
+{
+	struct Color result = {};
+
+	result.red = (u8)lerp(a->red, b->red, t);
+	result.green = (u8)lerp(a->green, b->green, t);
+	result.blue = (u8)lerp(a->blue, b->blue, t);
+
+	return result;
+}
+
+
+real32 random_zero_one()
+{
+	u32 x = RAND_SEED;
+	
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+
+	RAND_SEED = x;
+
+	return (real32)x / UINT_MAX;
+}
+
+struct Color random_color()
+{
+	struct Color result = {};
+
+	result.red = random_zero_one() * 255.0f;
+	result.green = random_zero_one() * 255.0f;
+	result.blue = random_zero_one() * 255.0f;
+
+	return result;
+}
+
+void generate_pallete()
+{
+	for (u32 i = 0; i < PALETTE_SIZE; ++i)
+	{
+		real32 x_plot = (real32) i / PALETTE_SIZE;
+
+		u32 blue_term_u32 = (u32)x_plot;
+		if (blue_term_u32 > 255)
+		{
+			blue_term_u32 = 255;
+		}
+
+		struct Color this_color = {0, 0, (u8)blue_term_u32};
+
+		palette[i] = this_color;	
+	}
 }
 
 u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 {
 	u32 color = 0;
 
-	real32 c_real = 0.285f;
-	real32 c_imaginary = 0;
+#if 0
+	C_REAL = -0.4f;
+	C_IMAGINARY = 0.6f;
+#endif
+
 	real32 radius = 1.5f;
 	real32 radius_squared = radius * radius;
 
@@ -47,31 +119,58 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 	real32 z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
 
 	u32 i = 0;
-	u32 iteration_limit = 100*100;
+	u32 iteration_limit = 1000;
 
 	while (z_real_squared + z_imaginary_squared < radius_squared &&
 			i < iteration_limit)
 	{
 		real32 temp = z_real_squared - z_imaginary_squared;
 
-		z_imaginary_scaled = 2.0f * z_real_scaled * z_imaginary_scaled + c_imaginary;
-		z_real_scaled = temp + c_real;
+		z_imaginary_scaled = 2.0f * z_real_scaled * z_imaginary_scaled + C_IMAGINARY;
+		z_real_scaled = temp + C_REAL;
 
 		z_real_squared = z_real_scaled * z_real_scaled;
 		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
 
 		++i;
 	}
+#if 0
+	real32 log_2 = 0.30102999566398114f;
+	real32 color_intensity = 0;
+	real32 log_r = log(radius);
 
-	i = i * i;
-	if (i >= iteration_limit) i = iteration_limit;
+	if (i < iteration_limit)
+	{
+		real32 log_zn = log(z_real_squared + z_imaginary_squared) / 2;
+		real32 nu = log(log_zn / log_r) / log_r;
 
-	u32 color_intensity = (u32)lerp(0.0f, 255.0f, (real32)i / iteration_limit);
+		color_intensity = (real32)i + 1 - nu;
+	}
 
-	u32 red = color_intensity;
-	u32 green = 0;
-	u32 blue = 0;
+	struct Color color1 = palette[((u32)floor(color_intensity)) % PALETTE_SIZE];
+	struct Color color2 = palette[((u32)floor(color_intensity) + 1) % PALETTE_SIZE];
 
+	real32 fract_intensity = color_intensity - (i32)(floor)color_intensity;
+	struct Color color_mix = lerp_color(&color1, &color2, fract_intensity);
+
+	u32 red = (u32)color_mix.red;
+	u32 green = (u32)color_mix.green;
+	u32 blue = (u32)color_mix.blue;
+#else
+	struct Color color1 = {0, 0, 0};
+	struct Color color2 = {0, 0, 255};
+
+	real32 x_plot = (real32)i / iteration_limit;
+
+	real32 si = (real32)i - log2(log2(z_real_squared + z_imaginary_squared)) + radius_squared;
+	real32 contrib_zero_one = si / iteration_limit;
+	struct Color color_mix = lerp_color(&color1, &color2, 255.0f * contrib_zero_one);
+
+	u32 red = (u32)color_mix.red;
+	u32 green = (u32)color_mix.green;
+	u32 blue = (u32)color_mix.blue;
+
+#endif
 	u32 red_bits_to_shift = 16;
 	u32 green_bits_to_shift = 8;
 	u32 blue_bits_to_shift = 0;
@@ -172,6 +271,14 @@ int main(i32 argc, char** argv)
 			work_queue.work_orders[work_index] = new_order;
 		}	
 	}
+
+	RAND_SEED = (time(0) * 997)%100000009;
+	generate_pallete();
+
+#if 0
+	C_REAL = (2.0f * random_zero_one() - 1.0f) * 2.0f;
+	C_IMAGINARY = (2.0f * random_zero_one() - 1.0f) * 2.0f;
+#endif
 
 	u32 num_threads = 7;
 	pthread_t thread_ids[100];
