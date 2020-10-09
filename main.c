@@ -106,13 +106,13 @@ int main(i32 argc, char** argv)
 	UNUSED(argc);
 	UNUSED(argv);
 
-	u32 width = 900;
-	u32 height = 600;
+	u32 width = 2400;
+	u32 height = 1400;
 	u32 *pixels = (u32*)malloc(sizeof(u32) * width * height);
 
 	struct WorkQueue work_queue = {};
 	//NOTE(stanisz): in pixels.
-	const u32 strip_size = 20;
+	const u32 strip_size = 50;
 	work_queue.pixels = pixels;
 	work_queue.width = width;
 	work_queue.height = height;
@@ -142,19 +142,15 @@ int main(i32 argc, char** argv)
 			work_queue.work_orders[work_index] = new_order;
 		}	
 	}
-	
-#if 0
-	for(u32 i = 0; i < work_queue.work_order_count; ++i)
-	{
-		LOG_UINT(work_queue.work_orders[i].y_start);
-	}
-#endif	
-	//NOTE(stanisz): is that necessary?
-	__sync_synchronize();
 
-	u32 num_threads = 1;
-
+	u32 num_threads = 7;
 	pthread_t thread_ids[100];
+
+	//NOTE(stanisz): Fencing - making sure that thread 0 has
+	// finished writing to the memory and that this memory is
+	// now available for reading from the thread that are 
+	// about to be created.
+	interlocked_add((volatile u32*)&work_queue.next_work_order, 0);
 
 	for (u32 i = 0; i < num_threads; ++i)
 	{
