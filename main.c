@@ -33,14 +33,44 @@ float lerp(float a, float b, float t)
 
 u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 {
-	float x_interp = lerp(0.0, 255.0, (float)x / width);
-	float y_interp = lerp(0.0, 255.0, (float)y / height);
-
 	u32 color = 0;
 
-	u32 red = 0;
-	u32 green = (u32)x_interp;
-	u32 blue = (u32)y_interp;
+	real32 c_real = 0.285f;
+	real32 c_imaginary = 0;
+	real32 radius = 1.5f;
+	real32 radius_squared = radius * radius;
+
+	real32 z_real_scaled = lerp(-radius, radius, (real32)x / width);
+	real32 z_imaginary_scaled = lerp(-radius, radius, (real32)y / height);
+
+	real32 z_real_squared = z_real_scaled * z_real_scaled;
+	real32 z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
+
+	u32 i = 0;
+	u32 iteration_limit = 100*100;
+
+	while (z_real_squared + z_imaginary_squared < radius_squared &&
+			i < iteration_limit)
+	{
+		real32 temp = z_real_squared - z_imaginary_squared;
+
+		z_imaginary_scaled = 2.0f * z_real_scaled * z_imaginary_scaled + c_imaginary;
+		z_real_scaled = temp + c_real;
+
+		z_real_squared = z_real_scaled * z_real_scaled;
+		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
+
+		++i;
+	}
+
+	i = i * i;
+	if (i >= iteration_limit) i = iteration_limit;
+
+	u32 color_intensity = (u32)lerp(0.0f, 255.0f, (real32)i / iteration_limit);
+
+	u32 red = color_intensity;
+	u32 green = 0;
+	u32 blue = 0;
 
 	u32 red_bits_to_shift = 16;
 	u32 green_bits_to_shift = 8;
