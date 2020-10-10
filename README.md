@@ -19,7 +19,7 @@ Just like this one :tada: :tada: :
 
 Compilation:
 
-`chmod +x compile.sh && ./compile release`
+`chmod +x compile.sh && ./compile.sh release`
 
 Running the program:
 
