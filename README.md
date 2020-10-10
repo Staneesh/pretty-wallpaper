@@ -11,7 +11,7 @@ Just like this one :tada: :tada: :
 **pretty-wallpaper:**
 
 - Uses multithreading to compute the final image. 
-- Supports smooth shading based on HSB ➡️ RGB conversion
+- Supports smooth shading based on HSB ➡️  RGB conversion
 
 ---
 

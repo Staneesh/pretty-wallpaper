@@ -35,8 +35,6 @@ struct Color
 	u8 blue;
 };
 
-#define PALETTE_SIZE 10000
-struct Color palette[PALETTE_SIZE];
 u32 RAND_SEED = 1000; 
 real32 C_REAL = -0.4f;
 real32 C_IMAGINARY = 0.6f;
@@ -146,32 +144,9 @@ struct Color random_color()
 	return result;
 }
 
-void generate_pallete()
-{
-	for (u32 i = 0; i < PALETTE_SIZE; ++i)
-	{
-		real32 x_plot = (real32) i / PALETTE_SIZE;
-
-		u32 blue_term_u32 = (u32)x_plot * 255;
-		if (blue_term_u32 > 255)
-		{
-			blue_term_u32 = 255;
-		}
-
-		struct Color this_color = {0, 0, (u8)blue_term_u32};
-
-		palette[i] = this_color;	
-	}
-}
-
 u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 {
 	u32 color = 0;
-
-#if 0
-	C_REAL = -0.4f;
-	C_IMAGINARY = 0.6f;
-#endif
 
 	real32 radius = 1.5f;
 	real32 radius_squared = radius * radius;
@@ -198,63 +173,26 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 		z_real_squared = z_real_scaled * z_real_scaled;
 		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
 
-#if 1
+		//NOTE(stanisz): This computations are used in determining the smooth
+		// value of a color of a given pixel
 		real32 length = sqrt(z_real_squared + z_imaginary_squared);
 		smooth_color += exp(-length);
-#endif
+
 		++i;
 	}
-#if 0
-	real32 log_2 = 0.30102999566398114f;
-	real32 color_intensity = 0;
-	real32 log_r = log(radius);
-
-	if (i < iteration_limit)
-	{
-		real32 log_zn = log(z_real_squared + z_imaginary_squared) / 2;
-		real32 nu = log(log_zn / log_r) / log_r;
-
-		color_intensity = (real32)i + 1 - nu;
-	}
-
-	struct Color color1 = palette[((u32)floor(color_intensity)) % PALETTE_SIZE];
-	struct Color color2 = palette[((u32)floor(color_intensity) + 1) % PALETTE_SIZE];
-
-	real32 fract_intensity = color_intensity - (real32)floor(color_intensity);
-	struct Color color_mix = lerp_color(&color1, &color2, fract_intensity);
-
-	u32 red = (u32)color_mix.red;
-	u32 green = (u32)color_mix.green;
-	u32 blue = (u32)color_mix.blue;
-#elif 0
-	struct Color color1 = {0, 0, 0};
-	struct Color color2 = {0, 0, 255};
-
-	real32 x_plot = (real32)i / iteration_limit;
-
-	real32 si = (real32)i - log2(log2(z_real_squared + z_imaginary_squared)) + radius_squared;
-	real32 contrib_zero_one = si / iteration_limit;
-	struct Color color_mix = lerp_color(&color1, &color2, 255.0f * contrib_zero_one);
-
-	u32 red = (u32)color_mix.red;
-	u32 green = (u32)color_mix.green;
-	u32 blue = (u32)color_mix.blue;
-
-#else
+	
+	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
+	// (From stackoverflow, but tested so its fine.) 
 	smooth_color /= iteration_limit;
 
-	//LOG_FLOAT(smooth_color);
 	real32 value = 10.0f * smooth_color; 
-	struct Color hsb_color = hsb_to_rgb(value, value, value);
+	struct Color hsb_color = hsb_to_rgb(value, value + 0.2, value);
 
 	u32 red = hsb_color.red;
 	u32 blue = hsb_color.blue;
 	u32 green = hsb_color.green;
-	//LOG_UINT(red);
 
-
-#endif
-
+	//NOTE(stanisz): color packing is currently linux-specific.	
 	u32 red_bits_to_shift = 16;
 	u32 green_bits_to_shift = 8;
 	u32 blue_bits_to_shift = 0;
@@ -266,20 +204,30 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 	return color; 
 }
 
+//NOTE(stanisz): this function performs thread-safe addition of
+// an 'addend' to the 'v'. 
+// This funciton is currently linux-specific.
 u32 interlocked_add(volatile u32* v, u32 addend)
 {
 	return __sync_fetch_and_add(v, addend);	
 }
 
+//NOTE(stanisz): The function below renders a horizontal strip of the image.
+// this is done in a way, so that the working threads will not interfere
+// with each other when accessing the data - any given pixel in the image
+// can be accessed by only one thread (belongs to exactly one strip).
+//
+// This function returns zero if there is not anything to render.
+// Nonzero (1) otherwise.
 u8 render_strip(struct WorkQueue* work_queue)
 {
-	//interlocked add, return previous.
+	//NOTE(stanisz): interlocked add, return previous.
 	u32 current_work_order = interlocked_add(&work_queue->next_work_order, 1);
-	//LOG_UINT(current_work_order);
 
 	if (current_work_order >= work_queue->work_order_count)
 	{
-		//LOG_STRING("NOTHING TO DO");
+		//NOTE(stanisz): the work is finished as there are no more
+		// strips to render.
 		return 0;
 	}
 	struct WorkOrder current = work_queue->work_orders[current_work_order];
@@ -289,26 +237,30 @@ u8 render_strip(struct WorkQueue* work_queue)
 		for (u32 x = 0; x < work_queue->width; ++x)
 		{
 			u32 array_index = y * work_queue->width + x;
-			//LOG_UINT(array_index);
+
 			assert(array_index < work_queue->width * work_queue->height);
 
 			work_queue->pixels[array_index] = get_pixel_color(x, y, 
 					work_queue->width, work_queue->height);
 		}
 	}
+
 	return 1;
 }
 
 void worker_function(struct WorkQueue* work_queue)
 {
+	//NOTE(stanisz): look for a job to do, if none - break.
 	while (render_strip(work_queue))
 	{
 	}
 
-	//NOTE(stanisz): what does it really do? does it join?
+	//TODO(stanisz): what does it really do? does it join?
 	pthread_exit(0);
 }
 
+//NOTE(stanisz): this function is currently linux-specific.
+// It is responsible for creating a worker thread.
 void create_worker_thread(struct WorkQueue* work_queue, pthread_t *thread_ids, u32 i)
 {
 	pthread_create(&thread_ids[i], 0, (void *)&worker_function, work_queue);
@@ -316,6 +268,7 @@ void create_worker_thread(struct WorkQueue* work_queue, pthread_t *thread_ids, u
 
 int main(i32 argc, char** argv)
 {
+	//TODO(stanisz): support argument passing - number of threads to use?
 	UNUSED(argc);
 	UNUSED(argv);
 
@@ -325,7 +278,7 @@ int main(i32 argc, char** argv)
 
 	struct WorkQueue work_queue = {};
 	//NOTE(stanisz): in pixels.
-	const u32 strip_size = 50;
+	const u32 strip_size = height / 100;
 	work_queue.pixels = pixels;
 	work_queue.width = width;
 	work_queue.height = height;
@@ -333,6 +286,7 @@ int main(i32 argc, char** argv)
 			ceil((float)height / strip_size));
 
 		
+	//NOTE(stanisz): filling the 'work_queue'.
 	for (u32 y = 0; ; y+= strip_size)
 	{
 		struct WorkOrder new_order = {};
@@ -357,15 +311,13 @@ int main(i32 argc, char** argv)
 	}
 
 	RAND_SEED = (time(0) * 997)%100000009;
-	generate_pallete();
-
-#if 0
-	C_REAL = (2.0f * random_zero_one() - 1.0f) * 2.0f;
-	C_IMAGINARY = (2.0f * random_zero_one() - 1.0f) * 2.0f;
-#endif
+		
+	//NOTE(stanisz): these values produce nice images (found on the web).
 	C_REAL = 0.37+cos(RAND_SEED*1.23462673423)*0.04;
 	C_IMAGINARY = sin(RAND_SEED*1.43472384234)*0.10+0.50;
 
+	//NOTE(stanisz): number of additional threads to spawn 
+	// (apart from the initial one).
 	u32 num_threads = 7;
 	pthread_t thread_ids[100];
 
@@ -384,9 +336,11 @@ int main(i32 argc, char** argv)
 	{
 		pthread_join(thread_ids[i], 0);
 	}
+
 	writeImage(width, height, pixels, "paper.bmp");
 
 	free(pixels);
 	free(work_queue.work_orders);
+
 	return 0;
 }	
