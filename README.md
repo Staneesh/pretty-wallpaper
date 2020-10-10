@@ -11,6 +11,20 @@ Just like this one :tada: :tada: :
 **pretty-wallpaper:**
 
 - Uses multithreading to compute the final image. 
-- Supports smooth shading based on HSB :arrow right: RGB conversion
+- Supports smooth shading based on HSB ➡️ RGB conversion
 
 ---
+
+# Usage
+
+Compilation:
+
+`chmod +x compile.sh && ./compile release`
+
+Running the program:
+
+`./main`
+
+(Displaying the image in Firefox)
+
+`firefox paper.bmp`
