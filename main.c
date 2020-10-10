@@ -57,6 +57,70 @@ struct Color lerp_color(struct Color* a, struct Color* b, real32 t)
 	return result;
 }
 
+//NOTE(stanisz): from https://www.cs.rit.edu/~ncs/color/t_convert.html.
+struct Color hsb_to_rgb(real32 h, real32 s, real32 b)
+{
+	int i;
+	float f, p, q, t;
+	float red, green, blue;
+	struct Color result;
+
+	if( s == 0 ) {
+		// achromatic (grey)
+		
+		result.red = b;
+		result.green  = b;
+		result.blue = b;
+
+		return result;
+	}
+
+	h /= 60;			// sector 0 to 5
+	i = floor( h );
+	f = h - i;			// factorial part of h
+	p = b * ( 1 - s );
+	q = b * ( 1 - s * f );
+	t = b * ( 1 - s * ( 1 - f ) );
+
+	switch( i ) {
+		case 0:
+			red = b;
+			green = t;
+			blue = p;
+			break;
+		case 1:
+			red = q;
+			green = b;
+			blue = p;
+			break;
+		case 2:
+			red = p;
+			green = b;
+			blue = t;
+			break;
+		case 3:
+			red = p;
+			green = q;
+			blue = b;
+			break;
+		case 4:
+			red = t;
+			green = p;
+			blue = b;
+			break;
+		default:		// case 5:
+			red = b;
+			green = p;
+			blue = q;
+			break;
+	}
+
+	result.red = (u8)(red * 255.0f);
+	result.green = (u8)(green * 255.0f);
+	result.blue = (u8)(blue * 255.0f);
+
+	return result;
+}
 
 real32 random_zero_one()
 {
@@ -88,7 +152,7 @@ void generate_pallete()
 	{
 		real32 x_plot = (real32) i / PALETTE_SIZE;
 
-		u32 blue_term_u32 = (u32)x_plot;
+		u32 blue_term_u32 = (u32)x_plot * 255;
 		if (blue_term_u32 > 255)
 		{
 			blue_term_u32 = 255;
@@ -121,6 +185,8 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 	u32 i = 0;
 	u32 iteration_limit = 1000;
 
+	real32 smooth_color = 0;
+
 	while (z_real_squared + z_imaginary_squared < radius_squared &&
 			i < iteration_limit)
 	{
@@ -132,6 +198,10 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 		z_real_squared = z_real_scaled * z_real_scaled;
 		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
 
+#if 1
+		real32 length = sqrt(z_real_squared + z_imaginary_squared);
+		smooth_color += exp(-length);
+#endif
 		++i;
 	}
 #if 0
@@ -150,13 +220,13 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 	struct Color color1 = palette[((u32)floor(color_intensity)) % PALETTE_SIZE];
 	struct Color color2 = palette[((u32)floor(color_intensity) + 1) % PALETTE_SIZE];
 
-	real32 fract_intensity = color_intensity - (i32)(floor)color_intensity;
+	real32 fract_intensity = color_intensity - (real32)floor(color_intensity);
 	struct Color color_mix = lerp_color(&color1, &color2, fract_intensity);
 
 	u32 red = (u32)color_mix.red;
 	u32 green = (u32)color_mix.green;
 	u32 blue = (u32)color_mix.blue;
-#else
+#elif 0
 	struct Color color1 = {0, 0, 0};
 	struct Color color2 = {0, 0, 255};
 
@@ -170,7 +240,21 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height)
 	u32 green = (u32)color_mix.green;
 	u32 blue = (u32)color_mix.blue;
 
+#else
+	smooth_color /= iteration_limit;
+
+	//LOG_FLOAT(smooth_color);
+	real32 value = 10.0f * smooth_color; 
+	struct Color hsb_color = hsb_to_rgb(value, value, value);
+
+	u32 red = hsb_color.red;
+	u32 blue = hsb_color.blue;
+	u32 green = hsb_color.green;
+	//LOG_UINT(red);
+
+
 #endif
+
 	u32 red_bits_to_shift = 16;
 	u32 green_bits_to_shift = 8;
 	u32 blue_bits_to_shift = 0;
