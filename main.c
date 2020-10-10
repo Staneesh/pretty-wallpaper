@@ -16,7 +16,6 @@ struct WorkOrder
 	u32 y_end;
 };
 
-//TODO(stanisz): better layout for caching
 struct WorkQueue
 {
 	u32 work_order_count;
@@ -24,13 +23,13 @@ struct WorkQueue
 	u32 *pixels;
 	u32 width;
 	u32 height;
-	u32 __pad;
 
 	struct WorkOrder* work_orders;
 	
-	u32 rand_state; 
 	real32 c_real;
 	real32 c_imaginary;
+	u32 rand_state; 
+	u32 _pad; 
 };
 
 struct Color
@@ -146,7 +145,7 @@ struct Color random_color(u32* xorshift_state)
 }
 
 u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
-		real32 c_real, real32 c_imaginary, real32 rand_state)
+		real32 c_real, real32 c_imaginary)
 {
 	u32 color = 0;
 
@@ -244,8 +243,7 @@ u8 render_strip(struct WorkQueue* work_queue)
 
 			work_queue->pixels[array_index] = get_pixel_color(x, y, 
 					work_queue->width, work_queue->height,
-					work_queue->c_real, work_queue->c_imaginary,
-					work_queue->rand_state);
+					work_queue->c_real, work_queue->c_imaginary);
 		}
 	}
 
