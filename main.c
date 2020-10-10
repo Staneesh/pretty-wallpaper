@@ -319,8 +319,8 @@ int main(i32 argc, char** argv)
 	UNUSED(argc);
 	UNUSED(argv);
 
-	u32 width = 1600 * 4;
-	u32 height = 900 * 4;
+	u32 width = 1600 * 2;
+	u32 height = 900 * 2;
 	u32 *pixels = (u32*)malloc(sizeof(u32) * width * height);
 
 	struct WorkQueue work_queue = {};
