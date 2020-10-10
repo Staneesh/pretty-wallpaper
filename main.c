@@ -319,8 +319,8 @@ int main(i32 argc, char** argv)
 	UNUSED(argc);
 	UNUSED(argv);
 
-	u32 width = 2400;
-	u32 height = 1400;
+	u32 width = 1600 * 4;
+	u32 height = 900 * 4;
 	u32 *pixels = (u32*)malloc(sizeof(u32) * width * height);
 
 	struct WorkQueue work_queue = {};
@@ -363,6 +363,8 @@ int main(i32 argc, char** argv)
 	C_REAL = (2.0f * random_zero_one() - 1.0f) * 2.0f;
 	C_IMAGINARY = (2.0f * random_zero_one() - 1.0f) * 2.0f;
 #endif
+	C_REAL = 0.37+cos(RAND_SEED*1.23462673423)*0.04;
+	C_IMAGINARY = sin(RAND_SEED*1.43472384234)*0.10+0.50;
 
 	u32 num_threads = 7;
 	pthread_t thread_ids[100];
