@@ -268,67 +268,116 @@ struct VectorDataType
 };
 
 #if 0
-u32 get_pixel_color_wide(u32 x, u32 y, u32 width, u32 height,
+
+__m128 lerp_m128(const __m128* a, const __m128* b, const __m128* t)
+{
+	__m128 one_minus_t = _mm_sub_ps(_mm_set_ps1(1.0f), *t);
+	return _mm_add_ps(_mm_mul_ps(one_minus_t, *a),
+			_mm_mul_ps(*t, *b));
+}
+
+__m128 negative_m128(const __m128* a)
+{
+	return _mm_mul_ps(*a, _mm_set_ps1(-1.0f));
+}
+
+struct Colors
+{
+	u32 values[4];
+};
+//NOTE(stanisz): calculates pixels of coords: 
+// (x, y), (x+1, y), (x+2, y), (x+3, y).
+struct Colors get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 		real32 c_real, real32 c_imaginary)
 {
 	//NOTE(stanisz): sets 0.0f to all lines of color
-	real32 color = 0.0f;//_mm_set_ps1(0.0f);
 
-	real32 radius = 1.5f;
-	real32 radius_squared = radius * radius;
+	__m128 color = _mm_set_ps1(0.0f);
 
-	real32 z_real_scaled = lerp(-radius, radius, (real32)x / width);
-	real32 z_imaginary_scaled = lerp(-radius, radius, (real32)y / height);
+	__m128 radius = _mm_set_ps1(1.5f);
+	__m128 negative_radius = negative_m128(&radius);
+	__m128 radius_squared = _mm_mul_ps(radius, radius);
+	
+	__m128 x_wide = _mm_set_ps((float)x, (float)x+1, (float)x+2, (float)x+3);
+	__m128 y_wide = _mm_set_ps1((float)y);
+	__m128 tx = _mm_div_ps(x_wide, _mm_set_ps1(width));
+	__m128 ty = _mm_div_ps(y_wide, _mm_set_ps1(height));
 
-	real32 z_real_squared = z_real_scaled * z_real_scaled;
-	real32 z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
+	__m128 z_real_scaled = lerp_m128(&negative_radius, &radius, &tx);
+	__m128 z_imaginary_scaled = lerp_m128(&negative_radius, &radius, &ty);
+
+	__m128 z_real_squared = _mm_mul_ps(z_real_scaled, z_real_scaled);
+	__m128 z_imaginary_squared = _mm_mul_ps(z_imaginary_scaled, z_imaginary_scaled);
+
+	__m128 real_sq_plus_im_sq = _mm_add_ps(z_real_squared, z_imaginary_squared);
 
 	u32 i = 0;
 	u32 iteration_limit = 1000;
 
-	real32 smooth_color = 0;
+	__m128 smooth_color = _mm_set_ps1(0.0f);
 
-	while (z_real_squared + z_imaginary_squared < radius_squared &&
-			i < iteration_limit)
+	//NOTE(stanisz): early bailout is like this, because each pixel
+	// can escape in different iteration. I can break the loop only if
+	// all pixels escaped.
+	while(_mm_cmplt_ps(real_sq_plus_im_sq, radius_squared) && i < iteration_limit)
 	{
-		real32 temp = z_real_squared - z_imaginary_squared;
+		__m128 temp = _mm_sub_ps(z_real_squared, z_imaginary_squared);
+		__m128 z_re_z_im = _mm_mul_ps(z_real_scaled, z_imaginary_scaled);
+		__m128 z_re_z_im_times_2 = _mm_mul_ps(_mm_set_ps1(2.0f), z_re_z_im);
 
-		z_imaginary_scaled = 2.0f * z_real_scaled * z_imaginary_scaled + c_imaginary;
-		z_real_scaled = temp + c_real;
+		z_imaginary_scaled = _mm_add_ps(z_re_z_im_times_2, c_imaginary);
+		z_real_scaled = _mm_add_ps(temp, c_real);
 
-		z_real_squared = z_real_scaled * z_real_scaled;
-		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
+		z_real_squared = _mm_mul_ps(z_real_scaled, z_real_scaled);
+		z_imaginary_squared = _mm_mul_ps(z_imaginary_scaled, z_imaginary_scaled);
+		real_sq_plus_im_sq = _mm_add_ps(z_real_squared, z_imaginary_squared);
 
 		//NOTE(stanisz): This computations are used in determining the smooth
 		// value of a color of a given pixel
-		real32 length = sqrt(z_real_squared + z_imaginary_squared);
-		smooth_color += exp(-length);
+		__m128 length = _mm_sqrt_ps(real_sq_plus_im_sq);
+		__m128 exp_term = _mm_exp_ps(negative_m128(&length));
+		smooth_color = _mm_add_ps(smooth_color, exp_term);
 
 		++i;
 	}
 	
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
 	// (From stackoverflow, but tested so its fine.) 
-	smooth_color /= iteration_limit;
-	real32 value = 10.0f * smooth_color; 
-	struct Color hsb_color = hsb_to_rgb(value, value + 0.2, value);
+	smooth_color = _mm_div_ps(smooth_color, _mm_set_ps1(iteration_limit));
+	__m128 value = _mm_mul_ps(_mm_set_ps(10.0f), smooth_color); 
+	
+	real32 values[4];
+	values[0] = (value) & (0xFFFFFFFF);
+	values[1] = (value) & (0xFFFFFFFF << 32);
+	values[2] = (value) & (0xFFFFFFFF << 64);
+	values[3] = (value) & (0xFFFFFFFF << 96);
+		
+	//NOTE(stanisz): rgb colors actually
+	struct Color hsb_colors[4];
+	hsb_color[0] = hsb_to_rgb(values[0], values[0] + 0.2, values[0]);
+	hsb_color[1] = hsb_to_rgb(values[1], values[1] + 0.2, values[1]);
+	hsb_color[2] = hsb_to_rgb(values[2], values[2] + 0.2, values[2]);
+	hsb_color[3] = hsb_to_rgb(values[3], values[3] + 0.2, values[3]);
 
-	u32 red = hsb_color.red;
-	u32 blue = hsb_color.blue;
-	u32 green = hsb_color.green;
+	for (u32 i = 0; i < 4; ++i)
+	{
+		u32 red = hsb_color[i].red;
+		u32 blue = hsb_color[i].blue;
+		u32 green = hsb_color[i].green;
 
-	//NOTE(stanisz): color packing is currently linux-specific.	
-	u32 red_bits_to_shift = 16;
-	u32 green_bits_to_shift = 8;
-	u32 blue_bits_to_shift = 0;
+		//NOTE(stanisz): color packing is currently linux-specific.	
+		u32 red_bits_to_shift = 16;
+		u32 green_bits_to_shift = 8;
+		u32 blue_bits_to_shift = 0;
 
-	color |= (red << red_bits_to_shift);
-	color |= (green << green_bits_to_shift);
-	color |= (blue << blue_bits_to_shift);
-
-	return color; 
+		colors.values[i] |= (red << red_bits_to_shift);
+		colors.values[i] |= (green << green_bits_to_shift);
+		colors.values[i] |= (blue << blue_bits_to_shift);
+	}
+	return colors; 
 }
 #endif
+
 //NOTE(stanisz): this function performs thread-safe addition of
 // an 'addend' to the 'v'. 
 // This funciton is currently linux-specific.
@@ -397,8 +446,6 @@ int main(i32 argc, char** argv)
 	//TODO(stanisz): support argument passing - number of threads to use?
 	UNUSED(argc);
 	UNUSED(argv);
-
-	LOG_UINT(LINE_WIDTH);
 
 	u32 width = 1600 * 2;
 	u32 height = 900 * 2;
