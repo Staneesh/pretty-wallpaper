@@ -6,6 +6,8 @@
 #include <pthread.h>
 #include <limits.h>
 #include <time.h>
+#include <xmmintrin.h>
+#include <immintrin.h>
 
 //NOTE(stanisz): requires stdio.h to be included before this line
 #include "utils.c"
@@ -149,6 +151,7 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
 {
 	u32 color = 0;
 
+	
 	real32 radius = 1.5f;
 	real32 radius_squared = radius * radius;
 
@@ -185,7 +188,6 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
 	// (From stackoverflow, but tested so its fine.) 
 	smooth_color /= iteration_limit;
-
 	real32 value = 10.0f * smooth_color; 
 	struct Color hsb_color = hsb_to_rgb(value, value + 0.2, value);
 
@@ -205,6 +207,128 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
 	return color; 
 }
 
+struct CpuInfo
+{
+	u32 sse_version;
+	u32 avx_version;
+};
+
+struct CpuInfo highest_sse_version_supported()
+{
+	struct CpuInfo result = {};
+	//NOTE(stanisz): gather data about the cpu enabling the use of 
+	// __builtin_cpu_supports() and __builtin_cpu_is().
+	__builtin_cpu_init();
+
+	if (__builtin_cpu_supports("sse"))
+	{
+		result.sse_version = 10;
+	}
+	if (__builtin_cpu_supports("sse2"))
+	{
+		result.sse_version = 20;
+	}
+	if (__builtin_cpu_supports("sse3"))
+	{
+		result.sse_version = 30;
+	}
+
+	if (__builtin_cpu_supports("sse4.1"))
+	{
+		result.sse_version = 41;
+	}
+
+	if (__builtin_cpu_supports("sse4.2"))
+	{
+		result.sse_version = 42;
+	}
+
+	if (__builtin_cpu_supports("avx"))
+	{
+		result.avx_version = 10;
+	}
+
+	if (__builtin_cpu_supports("avx2"))
+	{
+		result.avx_version = 20;
+	}
+
+	return result;
+}
+
+typedef __m128 (*mm_set_ps1_type)(float);
+struct VectorFunctionSet128
+{
+	mm_set_ps1_type mm_set_ps1;
+};
+
+struct VectorDataType
+{
+	void* data;
+};
+
+#if 0
+u32 get_pixel_color_wide(u32 x, u32 y, u32 width, u32 height,
+		real32 c_real, real32 c_imaginary)
+{
+	//NOTE(stanisz): sets 0.0f to all lines of color
+	real32 color = 0.0f;//_mm_set_ps1(0.0f);
+
+	real32 radius = 1.5f;
+	real32 radius_squared = radius * radius;
+
+	real32 z_real_scaled = lerp(-radius, radius, (real32)x / width);
+	real32 z_imaginary_scaled = lerp(-radius, radius, (real32)y / height);
+
+	real32 z_real_squared = z_real_scaled * z_real_scaled;
+	real32 z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
+
+	u32 i = 0;
+	u32 iteration_limit = 1000;
+
+	real32 smooth_color = 0;
+
+	while (z_real_squared + z_imaginary_squared < radius_squared &&
+			i < iteration_limit)
+	{
+		real32 temp = z_real_squared - z_imaginary_squared;
+
+		z_imaginary_scaled = 2.0f * z_real_scaled * z_imaginary_scaled + c_imaginary;
+		z_real_scaled = temp + c_real;
+
+		z_real_squared = z_real_scaled * z_real_scaled;
+		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
+
+		//NOTE(stanisz): This computations are used in determining the smooth
+		// value of a color of a given pixel
+		real32 length = sqrt(z_real_squared + z_imaginary_squared);
+		smooth_color += exp(-length);
+
+		++i;
+	}
+	
+	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
+	// (From stackoverflow, but tested so its fine.) 
+	smooth_color /= iteration_limit;
+	real32 value = 10.0f * smooth_color; 
+	struct Color hsb_color = hsb_to_rgb(value, value + 0.2, value);
+
+	u32 red = hsb_color.red;
+	u32 blue = hsb_color.blue;
+	u32 green = hsb_color.green;
+
+	//NOTE(stanisz): color packing is currently linux-specific.	
+	u32 red_bits_to_shift = 16;
+	u32 green_bits_to_shift = 8;
+	u32 blue_bits_to_shift = 0;
+
+	color |= (red << red_bits_to_shift);
+	color |= (green << green_bits_to_shift);
+	color |= (blue << blue_bits_to_shift);
+
+	return color; 
+}
+#endif
 //NOTE(stanisz): this function performs thread-safe addition of
 // an 'addend' to the 'v'. 
 // This funciton is currently linux-specific.
@@ -273,6 +397,8 @@ int main(i32 argc, char** argv)
 	//TODO(stanisz): support argument passing - number of threads to use?
 	UNUSED(argc);
 	UNUSED(argv);
+
+	LOG_UINT(LINE_WIDTH);
 
 	u32 width = 1600 * 2;
 	u32 height = 900 * 2;

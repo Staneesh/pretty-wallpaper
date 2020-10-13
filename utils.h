@@ -34,8 +34,13 @@ typedef double real64;
 
 #define UNUSED(x) (void)(x)
 
-
-
+#if defined(__AVX2__) || defined(__AVX__)
+	#define LINE_WIDTH      8
+	#define WIDE_FLOAT __m256
+#elif defined(__SSE2__) || defined(__SSE__)
+	#define LINE_WIDTH      4
+	#define WIDE_FLOAT __m128
+#endif
 
 void write_image(u32 width, u32 height,
 		const u32* pixels, const i8* filename);

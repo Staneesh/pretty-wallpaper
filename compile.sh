@@ -10,7 +10,7 @@ fi
 
 mode=$1
 flags=""
-common="-lm -pthread"
+common="-lm -pthread -march=native"
 
 if [ $mode == "debug" ]
 then
