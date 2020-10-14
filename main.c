@@ -12,6 +12,10 @@
 //NOTE(stanisz): requires stdio.h to be included before this line
 #include "utils.c"
 
+//TODO(stanisz): this define is temporary to make sure, that the code on git compiles
+// and works
+#define AVX_ENABLED 0
+
 struct WorkOrder
 {
 	u32 y_start;
@@ -267,7 +271,65 @@ struct VectorDataType
 	void* data;
 };
 
-#if 0
+#if AXV_ENABLED == 0
+
+__m128 exp_ps(__m128 x) {
+__m128 _ps_exp_hi = _mm_set_ps1(88.3762626647949f);
+__m128 _ps_exp_lo = _mm_set1_ps(-88.3762626647949f);
+__m128 _ps_cephes_LOG2EF = _mm_set1_ps(1.44269504088896341f);
+__m128 _ps_cephes_exp_C1 = _mm_set1_ps(0.693359375f);
+__m128 _ps_cephes_exp_C2 = _mm_set1_ps(-2.12194440e-4f);
+__m128 _ps_cephes_exp_p0 = _mm_set1_ps(1.9875691500E-4f);
+__m128 _ps_cephes_exp_p1 = _mm_set1_ps(1.3981999507E-3f);
+__m128 _ps_cephes_exp_p2 = _mm_set1_ps(8.3334519073E-3f);
+__m128 _ps_cephes_exp_p3 = _mm_set1_ps(4.1665795894E-2f);
+__m128 _ps_cephes_exp_p4 = _mm_set1_ps(1.6666665459E-1f);
+__m128 _ps_cephes_exp_p5 = _mm_set1_ps(5.0000001201E-1f);
+
+  __m128 one = _mm_set_ps1(1.0f);
+  __m128 _ps_0p5 = _mm_set_ps1(0.5f);
+  __m128i _pi32_0x7f = _mm_set_epi32(0x7f, 0x7f, 0x7f, 0x7f);
+
+  x = _mm_min_ps(x, _ps_exp_hi);
+  x = _mm_max_ps(x, _ps_exp_lo);
+
+  /* express exp(x) as exp(g + n*log(2)) */
+  __m128 fx = _mm_mul_ps(x, _ps_cephes_LOG2EF);
+  fx = _mm_add_ps(fx, _ps_0p5);
+
+  /* how to perform a floorf with SSE: just below */
+  __m128i emm0 = _mm_cvttps_epi32(fx);
+  __m128 tmp  = _mm_cvtepi32_ps(emm0);
+  /* if greater, substract 1 */
+  __m128 mask = _mm_cmpgt_ps(tmp, fx);
+  mask = _mm_and_ps(mask, one);
+  fx = _mm_sub_ps(tmp, mask);
+  tmp = _mm_mul_ps(fx, _ps_cephes_exp_C1);
+  __m128 z = _mm_mul_ps(fx, _ps_cephes_exp_C2);
+  x = _mm_sub_ps(x, _mm_add_ps(tmp, z));
+  z = _mm_mul_ps(x,x);
+  __m128 y = _ps_cephes_exp_p0;
+  y = _mm_mul_ps(y, x);
+  y = _mm_add_ps(y, _ps_cephes_exp_p1);
+  y = _mm_mul_ps(y, x);
+  y = _mm_add_ps(y, _ps_cephes_exp_p2);
+  y = _mm_mul_ps(y, x);
+  y = _mm_add_ps(y, _ps_cephes_exp_p3);
+  y = _mm_mul_ps(y, x);
+  y = _mm_add_ps(y, _ps_cephes_exp_p4);
+  y = _mm_mul_ps(y, x);
+  y = _mm_add_ps(y, _ps_cephes_exp_p5);
+  y = _mm_mul_ps(y, z);
+  y = _mm_add_ps(y, _mm_add_ps(x, one));
+
+  /* build 2^n */
+  emm0 = _mm_cvttps_epi32(fx);
+  emm0 = _mm_add_epi32(emm0, _pi32_0x7f);
+  emm0 = _mm_slli_epi32(emm0, 23);
+  __m128 pow2n = _mm_castsi128_ps(emm0);
+  y = _mm_mul_ps(y, pow2n);
+  return y;
+}
 
 __m128 lerp_m128(const __m128* a, const __m128* b, const __m128* t)
 {
@@ -287,12 +349,11 @@ struct Colors
 };
 //NOTE(stanisz): calculates pixels of coords: 
 // (x, y), (x+1, y), (x+2, y), (x+3, y).
-struct Colors get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
-		real32 c_real, real32 c_imaginary)
+void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
+		real32 c_real, real32 c_imaginary, struct Color colors[4])
 {
-	//NOTE(stanisz): sets 0.0f to all lines of color
-
-	__m128 color = _mm_set_ps1(0.0f);
+	__m128 c_imaginary_wide = _mm_set_ps1(c_imaginary);
+	__m128 c_real_wide = _mm_set_ps1(c_real);
 
 	__m128 radius = _mm_set_ps1(1.5f);
 	__m128 negative_radius = negative_m128(&radius);
@@ -311,70 +372,92 @@ struct Colors get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 
 	__m128 real_sq_plus_im_sq = _mm_add_ps(z_real_squared, z_imaginary_squared);
 
-	u32 i = 0;
-	u32 iteration_limit = 1000;
+	__m128i i = _mm_set_epi32(0, 0, 0, 0);
+	__m128i iteration_limit = _mm_set_epi32(1000, 1000, 1000, 1000);
 
 	__m128 smooth_color = _mm_set_ps1(0.0f);
 
 	//NOTE(stanisz): early bailout is like this, because each pixel
 	// can escape in different iteration. I can break the loop only if
 	// all pixels escaped.
-	while(_mm_cmplt_ps(real_sq_plus_im_sq, radius_squared) && i < iteration_limit)
+	__m128 bailout_comparison_flt = _mm_cmplt_ps(real_sq_plus_im_sq, radius_squared);
+	__m128i bailout_comparison = _mm_cvtps_epi32(bailout_comparison_flt);
+	u8 is_bailout_all_zero = (u8)(_mm_movemask_epi8(bailout_comparison) == 0);
+
+	u8 all_lanes_stopped_iterating =
+		(u8)(_mm_movemask_epi8(_mm_cmplt_epi32(i, iteration_limit)) == 0);
+
+	while(is_bailout_all_zero == 0 && all_lanes_stopped_iterating == 0)
 	{
 		__m128 temp = _mm_sub_ps(z_real_squared, z_imaginary_squared);
 		__m128 z_re_z_im = _mm_mul_ps(z_real_scaled, z_imaginary_scaled);
 		__m128 z_re_z_im_times_2 = _mm_mul_ps(_mm_set_ps1(2.0f), z_re_z_im);
 
-		z_imaginary_scaled = _mm_add_ps(z_re_z_im_times_2, c_imaginary);
-		z_real_scaled = _mm_add_ps(temp, c_real);
+		z_imaginary_scaled = _mm_add_ps(z_re_z_im_times_2, c_imaginary_wide);
+		z_real_scaled = _mm_add_ps(temp, c_real_wide);
 
 		z_real_squared = _mm_mul_ps(z_real_scaled, z_real_scaled);
 		z_imaginary_squared = _mm_mul_ps(z_imaginary_scaled, z_imaginary_scaled);
 		real_sq_plus_im_sq = _mm_add_ps(z_real_squared, z_imaginary_squared);
 
+		bailout_comparison_flt = _mm_cmplt_ps(real_sq_plus_im_sq, radius_squared);
+		bailout_comparison = _mm_cvtps_epi32(bailout_comparison_flt);
+		u32 bailout_comparison_mask = _mm_movemask_epi8(bailout_comparison);
+		is_bailout_all_zero = (u8)(bailout_comparison_mask == 0);
+
+		all_lanes_stopped_iterating = 
+			(u8)(_mm_movemask_epi8(_mm_cmplt_epi32(i, iteration_limit)) == 0);
+
 		//NOTE(stanisz): This computations are used in determining the smooth
 		// value of a color of a given pixel
 		__m128 length = _mm_sqrt_ps(real_sq_plus_im_sq);
-		__m128 exp_term = _mm_exp_ps(negative_m128(&length));
+		__m128 exp_term = exp_ps(negative_m128(&length));
 		smooth_color = _mm_add_ps(smooth_color, exp_term);
 
-		++i;
+		u32 lane_should_continue[4];
+		lane_should_continue[0] = bailout_comparison_mask & 0xFF;
+		lane_should_continue[1] = bailout_comparison_mask & (0xFF << 8);
+		lane_should_continue[2] = bailout_comparison_mask & (0xFF << 16);
+		lane_should_continue[3] = bailout_comparison_mask & (0xFF << 24);
+		i = _mm_add_epi32(i, _mm_set_epi32(lane_should_continue[0],
+					lane_should_continue[1], 
+					lane_should_continue[2],
+					lane_should_continue[3]));
 	}
 	
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
 	// (From stackoverflow, but tested so its fine.) 
-	smooth_color = _mm_div_ps(smooth_color, _mm_set_ps1(iteration_limit));
-	__m128 value = _mm_mul_ps(_mm_set_ps(10.0f), smooth_color); 
+	smooth_color = _mm_div_ps(smooth_color, _mm_set_ps1(1000));
+	__m128 value = _mm_mul_ps(_mm_set_ps1(10.0f), smooth_color); 
 	
 	real32 values[4];
-	values[0] = (value) & (0xFFFFFFFF);
-	values[1] = (value) & (0xFFFFFFFF << 32);
-	values[2] = (value) & (0xFFFFFFFF << 64);
-	values[3] = (value) & (0xFFFFFFFF << 96);
+	values[0] = *((unsigned char*)&value);
+	values[1] = *((unsigned char*)&value + 32);
+	values[2] = *((unsigned char*)&value + 64);
+	values[3] = *((unsigned char*)&value + 96);
 		
 	//NOTE(stanisz): rgb colors actually
 	struct Color hsb_colors[4];
-	hsb_color[0] = hsb_to_rgb(values[0], values[0] + 0.2, values[0]);
-	hsb_color[1] = hsb_to_rgb(values[1], values[1] + 0.2, values[1]);
-	hsb_color[2] = hsb_to_rgb(values[2], values[2] + 0.2, values[2]);
-	hsb_color[3] = hsb_to_rgb(values[3], values[3] + 0.2, values[3]);
+	hsb_colors[0] = hsb_to_rgb(values[0], values[0] + 0.2, values[0]);
+	hsb_colors[1] = hsb_to_rgb(values[1], values[1] + 0.2, values[1]);
+	hsb_colors[2] = hsb_to_rgb(values[2], values[2] + 0.2, values[2]);
+	hsb_colors[3] = hsb_to_rgb(values[3], values[3] + 0.2, values[3]);
 
-	for (u32 i = 0; i < 4; ++i)
+	for (u32 i_temp = 0; i_temp < 4; ++i_temp)
 	{
-		u32 red = hsb_color[i].red;
-		u32 blue = hsb_color[i].blue;
-		u32 green = hsb_color[i].green;
+		u32 red = hsb_colors[i_temp].red;
+		u32 blue = hsb_colors[i_temp].blue;
+		u32 green = hsb_colors[i_temp].green;
 
 		//NOTE(stanisz): color packing is currently linux-specific.	
 		u32 red_bits_to_shift = 16;
 		u32 green_bits_to_shift = 8;
 		u32 blue_bits_to_shift = 0;
 
-		colors.values[i] |= (red << red_bits_to_shift);
-		colors.values[i] |= (green << green_bits_to_shift);
-		colors.values[i] |= (blue << blue_bits_to_shift);
+		colors[i_temp].red |= (red << red_bits_to_shift);
+		colors[i_temp].green |= (green << green_bits_to_shift);
+		colors[i_temp].blue |= (blue << blue_bits_to_shift);
 	}
-	return colors; 
 }
 #endif
 
@@ -408,15 +491,44 @@ u8 render_strip(struct WorkQueue* work_queue)
 
 	for (u32 y = current.y_start; y <= current.y_end; ++y)
 	{
-		for (u32 x = 0; x < work_queue->width; ++x)
+		for (u32 x = 0; x < work_queue->width;)
 		{
 			u32 array_index = y * work_queue->width + x;
 
 			assert(array_index < work_queue->width * work_queue->height);
-
+#if AXV_ENABLED == 0
 			work_queue->pixels[array_index] = get_pixel_color(x, y, 
 					work_queue->width, work_queue->height,
 					work_queue->c_real, work_queue->c_imaginary);
+
+			++x;
+#else
+			struct Color colors[4] = {};
+			get_pixel_colors_wide(x, y, work_queue->width, work_queue->height,
+					work_queue->c_real, work_queue->c_imaginary, colors);
+			
+			for (u32 i = array_index; i < array_index + 4; i++)
+			{
+				u32 color = 0;
+
+				u32 red = colors[i].red;
+				u32 blue = colors[i].blue;
+				u32 green = colors[i].green;
+
+				//NOTE(stanisz): color packing is currently linux-specific.	
+				u32 red_bits_to_shift = 16;
+				u32 green_bits_to_shift = 8;
+				u32 blue_bits_to_shift = 0;
+
+				color |= (red << red_bits_to_shift);
+				color |= (green << green_bits_to_shift);
+				color |= (blue << blue_bits_to_shift);
+			
+				work_queue->pixels[i] = color;
+			}
+
+			x+= 4;
+#endif
 		}
 	}
 
