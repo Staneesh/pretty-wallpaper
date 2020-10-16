@@ -14,7 +14,7 @@ common="-lm -pthread -march=native"
 
 if [ $mode == "debug" ]
 then
-	flags="-O0 -Wall -Wextra -Wshadow -fsanitize=undefined"
+	flags="-O0 -Wall -Wextra -Wshadow -g -fsanitize=undefined"
 elif [ $mode == "release" ]
 then
 	flags="-O3"

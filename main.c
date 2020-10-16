@@ -14,7 +14,7 @@
 
 //TODO(stanisz): this define is temporary to make sure, that the code on git compiles
 // and works
-#define AVX_ENABLED 0
+#define AVX_ENABLED 1
 
 struct WorkOrder
 {
@@ -271,7 +271,7 @@ struct VectorDataType
 	void* data;
 };
 
-#if AXV_ENABLED == 0
+#ifdef AVX_ENABLED
 
 __m128 exp_ps(__m128 x) {
 __m128 _ps_exp_hi = _mm_set_ps1(88.3762626647949f);
@@ -382,13 +382,18 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 	// all pixels escaped.
 	__m128 bailout_comparison_flt = _mm_cmplt_ps(real_sq_plus_im_sq, radius_squared);
 	__m128i bailout_comparison = _mm_cvtps_epi32(bailout_comparison_flt);
-	u8 is_bailout_all_zero = (u8)(_mm_movemask_epi8(bailout_comparison) == 0);
+	u32 bailout_mask = _mm_movemask_epi8(bailout_comparison) == 0;
+	u8 is_bailout_all_zero = (u8)(bailout_mask == 0);
 
 	u8 all_lanes_stopped_iterating =
 		(u8)(_mm_movemask_epi8(_mm_cmplt_epi32(i, iteration_limit)) == 0);
 
 	while(is_bailout_all_zero == 0 && all_lanes_stopped_iterating == 0)
 	{
+		if (x==360 && y == 1)
+		{
+			int GDB_STOP = 123123;
+		}
 		__m128 temp = _mm_sub_ps(z_real_squared, z_imaginary_squared);
 		__m128 z_re_z_im = _mm_mul_ps(z_real_scaled, z_imaginary_scaled);
 		__m128 z_re_z_im_times_2 = _mm_mul_ps(_mm_set_ps1(2.0f), z_re_z_im);
@@ -416,9 +421,9 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 
 		u32 lane_should_continue[4];
 		lane_should_continue[0] = bailout_comparison_mask & 0xFF;
-		lane_should_continue[1] = bailout_comparison_mask & (0xFF << 8);
-		lane_should_continue[2] = bailout_comparison_mask & (0xFF << 16);
-		lane_should_continue[3] = bailout_comparison_mask & (0xFF << 24);
+		lane_should_continue[1] = bailout_comparison_mask & (0xFF << 2);
+		lane_should_continue[2] = bailout_comparison_mask & (0xFF << 4);
+		lane_should_continue[3] = bailout_comparison_mask & (0xFF << 8);
 		i = _mm_add_epi32(i, _mm_set_epi32(lane_should_continue[0],
 					lane_should_continue[1], 
 					lane_should_continue[2],
@@ -432,9 +437,9 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 	
 	real32 values[4];
 	values[0] = *((unsigned char*)&value);
-	values[1] = *((unsigned char*)&value + 32);
-	values[2] = *((unsigned char*)&value + 64);
-	values[3] = *((unsigned char*)&value + 96);
+	values[1] = *((unsigned char*)&value + 32/8);
+	values[2] = *((unsigned char*)&value + 64/8);
+	values[3] = *((unsigned char*)&value + 96/8);
 		
 	//NOTE(stanisz): rgb colors actually
 	struct Color hsb_colors[4];
@@ -496,7 +501,7 @@ u8 render_strip(struct WorkQueue* work_queue)
 			u32 array_index = y * work_queue->width + x;
 
 			assert(array_index < work_queue->width * work_queue->height);
-#if AXV_ENABLED == 0
+#ifndef AVX_ENABLED
 			work_queue->pixels[array_index] = get_pixel_color(x, y, 
 					work_queue->width, work_queue->height,
 					work_queue->c_real, work_queue->c_imaginary);
@@ -511,9 +516,9 @@ u8 render_strip(struct WorkQueue* work_queue)
 			{
 				u32 color = 0;
 
-				u32 red = colors[i].red;
-				u32 blue = colors[i].blue;
-				u32 green = colors[i].green;
+				u32 red = colors[i - array_index].red;
+				u32 blue = colors[i - array_index].blue;
+				u32 green = colors[i - array_index].green;
 
 				//NOTE(stanisz): color packing is currently linux-specific.	
 				u32 red_bits_to_shift = 16;
@@ -559,8 +564,8 @@ int main(i32 argc, char** argv)
 	UNUSED(argc);
 	UNUSED(argv);
 
-	u32 width = 1600 * 2;
-	u32 height = 900 * 2;
+	u32 width = 1600 / 2;
+	u32 height = 900 / 2;
 	u32 *pixels = (u32*)malloc(sizeof(u32) * width * height);
 
 	struct WorkQueue work_queue = {};
@@ -605,7 +610,7 @@ int main(i32 argc, char** argv)
 
 	//NOTE(stanisz): number of additional threads to spawn 
 	// (apart from the initial one).
-	u32 num_threads = 7;
+	u32 num_threads = 1;
 	pthread_t thread_ids[100];
 
 	//NOTE(stanisz): Fencing - making sure that thread 0 has
