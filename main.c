@@ -372,28 +372,18 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 
 	__m128 real_sq_plus_im_sq = _mm_add_ps(z_real_squared, z_imaginary_squared);
 
-	__m128i i = _mm_set_epi32(0, 0, 0, 0);
-	__m128i iteration_limit = _mm_set_epi32(1000, 1000, 1000, 1000);
+	__m128 i = _mm_set_ps1(0);
 
 	__m128 smooth_color = _mm_set_ps1(0.0f);
 
-	//NOTE(stanisz): early bailout is like this, because each pixel
-	// can escape in different iteration. I can break the loop only if
-	// all pixels escaped.
-	__m128 bailout_comparison_flt = _mm_cmplt_ps(real_sq_plus_im_sq, radius_squared);
-	__m128i bailout_comparison = _mm_cvtps_epi32(bailout_comparison_flt);
-	u32 bailout_mask = _mm_movemask_epi8(bailout_comparison) == 0;
-	u8 is_bailout_all_zero = (u8)(bailout_mask == 0);
-
-	u8 all_lanes_stopped_iterating =
-		(u8)(_mm_movemask_epi8(_mm_cmplt_epi32(i, iteration_limit)) == 0);
-
-	while(is_bailout_all_zero == 0 && all_lanes_stopped_iterating == 0)
-	{
-		if (x==360 && y == 1)
+		if (x == 800 && y == 600)
 		{
-			int GDB_STOP = 123123;
+			u32 GDB_BREAK = 10;
+			GDB_BREAK /= 123;
 		}
+
+	for(u32 _i = 0; _i < 10; ++_i)
+	{
 		__m128 temp = _mm_sub_ps(z_real_squared, z_imaginary_squared);
 		__m128 z_re_z_im = _mm_mul_ps(z_real_scaled, z_imaginary_scaled);
 		__m128 z_re_z_im_times_2 = _mm_mul_ps(_mm_set_ps1(2.0f), z_re_z_im);
@@ -405,29 +395,16 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 		z_imaginary_squared = _mm_mul_ps(z_imaginary_scaled, z_imaginary_scaled);
 		real_sq_plus_im_sq = _mm_add_ps(z_real_squared, z_imaginary_squared);
 
-		bailout_comparison_flt = _mm_cmplt_ps(real_sq_plus_im_sq, radius_squared);
-		bailout_comparison = _mm_cvtps_epi32(bailout_comparison_flt);
-		u32 bailout_comparison_mask = _mm_movemask_epi8(bailout_comparison);
-		is_bailout_all_zero = (u8)(bailout_comparison_mask == 0);
-
-		all_lanes_stopped_iterating = 
-			(u8)(_mm_movemask_epi8(_mm_cmplt_epi32(i, iteration_limit)) == 0);
-
 		//NOTE(stanisz): This computations are used in determining the smooth
 		// value of a color of a given pixel
 		__m128 length = _mm_sqrt_ps(real_sq_plus_im_sq);
 		__m128 exp_term = exp_ps(negative_m128(&length));
 		smooth_color = _mm_add_ps(smooth_color, exp_term);
 
-		u32 lane_should_continue[4];
-		lane_should_continue[0] = bailout_comparison_mask & 0xFF;
-		lane_should_continue[1] = bailout_comparison_mask & (0xFF << 2);
-		lane_should_continue[2] = bailout_comparison_mask & (0xFF << 4);
-		lane_should_continue[3] = bailout_comparison_mask & (0xFF << 8);
-		i = _mm_add_epi32(i, _mm_set_epi32(lane_should_continue[0],
-					lane_should_continue[1], 
-					lane_should_continue[2],
-					lane_should_continue[3]));
+
+		__m128 comparison = _mm_cmple_ps(real_sq_plus_im_sq, radius_squared);
+		__m128 lanes_increment = _mm_and_ps(comparison, _mm_set_ps1(1));
+		i = _mm_add_ps(i, lanes_increment);
 	}
 	
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
@@ -564,8 +541,8 @@ int main(i32 argc, char** argv)
 	UNUSED(argc);
 	UNUSED(argv);
 
-	u32 width = 1600 / 2;
-	u32 height = 900 / 2;
+	u32 width = 1600 * 2;
+	u32 height = 900 * 2;
 	u32 *pixels = (u32*)malloc(sizeof(u32) * width * height);
 
 	struct WorkQueue work_queue = {};
@@ -602,7 +579,7 @@ int main(i32 argc, char** argv)
 		}	
 	}
 
-	work_queue.rand_state = (time(0) * 997)%100000009;
+	work_queue.rand_state = (1 /*time(0)*/ * 997)%100000009;
 		
 	//NOTE(stanisz): these values produce nice images (found on the web).
 	work_queue.c_real = 0.37+cos(work_queue.rand_state*1.23462673423)*0.04;
@@ -613,6 +590,9 @@ int main(i32 argc, char** argv)
 	u32 num_threads = 1;
 	pthread_t thread_ids[100];
 
+			LOG_UINT(get_pixel_color(800, 800,
+						work_queue.width, work_queue.height,
+						work_queue.c_real, work_queue.c_imaginary));
 	//NOTE(stanisz): Fencing - making sure that thread 0 has
 	// finished writing to the memory and that this memory is
 	// now available for reading from the thread that are 
