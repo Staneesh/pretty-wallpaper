@@ -180,15 +180,24 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
 
 		z_real_squared = z_real_scaled * z_real_scaled;
 		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
+		LOG_FLOAT(z_real_squared + z_imaginary_squared);
 
 		//NOTE(stanisz): This computations are used in determining the smooth
 		// value of a color of a given pixel
 		real32 length = sqrt(z_real_squared + z_imaginary_squared);
-		smooth_color += exp(-length);
+		real32 exp_term = exp(-length);
+		smooth_color += exp_term;
+		LOG_FLOAT(exp_term);
 
 		++i;
 	}
 	
+	if (x == 800 && y == 800)
+	{
+		LOG_FLOAT(smooth_color);
+
+		LOG_UINT(i);
+	}
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
 	// (From stackoverflow, but tested so its fine.) 
 	smooth_color /= iteration_limit;
@@ -208,6 +217,10 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
 	color |= (green << green_bits_to_shift);
 	color |= (blue << blue_bits_to_shift);
 
+	if (x == 800 && y == 800)
+	{
+		LOG_UINT(color);
+	}
 	return color; 
 }
 
@@ -376,13 +389,16 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 
 	__m128 smooth_color = _mm_set_ps1(0.0f);
 
-		if (x == 800 && y == 600)
-		{
-			u32 GDB_BREAK = 10;
-			GDB_BREAK /= 123;
-		}
+	u32 iter_limit = 1000;
 
-	for(u32 _i = 0; _i < 10; ++_i)
+	u32 _i = 0;
+	if (x == 800 && y == 800)
+	{
+		u32 SADASHDAJ;
+		SADASHDAJ /= 1231;
+
+	}
+	for(; _i < iter_limit; ++_i)
 	{
 		__m128 temp = _mm_sub_ps(z_real_squared, z_imaginary_squared);
 		__m128 z_re_z_im = _mm_mul_ps(z_real_scaled, z_imaginary_scaled);
@@ -405,40 +421,35 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 		__m128 comparison = _mm_cmple_ps(real_sq_plus_im_sq, radius_squared);
 		__m128 lanes_increment = _mm_and_ps(comparison, _mm_set_ps1(1));
 		i = _mm_add_ps(i, lanes_increment);
+		u32 mask = _mm_movemask_ps(comparison);
+		if (mask == 0)
+		{
+			break;
+		}
+	}
+	if (x == 800 && y == 800)
+	{
+		LOG_FLOAT(smooth_color[3]);
+		LOG_UINT(_i);
+
+		u32 GDB_STOP = 12323;
+		GDB_STOP /= 127863;
 	}
 	
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
 	// (From stackoverflow, but tested so its fine.) 
-	smooth_color = _mm_div_ps(smooth_color, _mm_set_ps1(1000));
+	smooth_color = _mm_div_ps(smooth_color, _mm_set_ps1(iter_limit));
 	__m128 value = _mm_mul_ps(_mm_set_ps1(10.0f), smooth_color); 
 	
-	real32 values[4];
-	values[0] = *((unsigned char*)&value);
-	values[1] = *((unsigned char*)&value + 32/8);
-	values[2] = *((unsigned char*)&value + 64/8);
-	values[3] = *((unsigned char*)&value + 96/8);
-		
-	//NOTE(stanisz): rgb colors actually
-	struct Color hsb_colors[4];
-	hsb_colors[0] = hsb_to_rgb(values[0], values[0] + 0.2, values[0]);
-	hsb_colors[1] = hsb_to_rgb(values[1], values[1] + 0.2, values[1]);
-	hsb_colors[2] = hsb_to_rgb(values[2], values[2] + 0.2, values[2]);
-	hsb_colors[3] = hsb_to_rgb(values[3], values[3] + 0.2, values[3]);
 
-	for (u32 i_temp = 0; i_temp < 4; ++i_temp)
+	for (i32 i_temp = 3; i_temp >= 0; --i_temp)
 	{
-		u32 red = hsb_colors[i_temp].red;
-		u32 blue = hsb_colors[i_temp].blue;
-		u32 green = hsb_colors[i_temp].green;
-
-		//NOTE(stanisz): color packing is currently linux-specific.	
-		u32 red_bits_to_shift = 16;
-		u32 green_bits_to_shift = 8;
-		u32 blue_bits_to_shift = 0;
-
-		colors[i_temp].red |= (red << red_bits_to_shift);
-		colors[i_temp].green |= (green << green_bits_to_shift);
-		colors[i_temp].blue |= (blue << blue_bits_to_shift);
+		struct Color rgb_color = hsb_to_rgb(value[i_temp], 
+				value[i_temp] + 0.2f,
+				value[i_temp]);
+		colors[3 - i_temp].red = rgb_color.red;
+		colors[3 - i_temp].blue = rgb_color.blue;
+		colors[3 - i_temp].green = rgb_color.green;
 	}
 }
 #endif
@@ -506,6 +517,10 @@ u8 render_strip(struct WorkQueue* work_queue)
 				color |= (green << green_bits_to_shift);
 				color |= (blue << blue_bits_to_shift);
 			
+				if (x == 800 && y == 800)
+				{
+					LOG_UINT(color);
+				}
 				work_queue->pixels[i] = color;
 			}
 
