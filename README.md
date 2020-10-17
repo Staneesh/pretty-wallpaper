@@ -10,7 +10,8 @@ Just like this one :tada: :tada: :
 
 **pretty-wallpaper:**
 
-- Uses multithreading to compute the final image. 
+- Uses multithreading to compute the final image
+- Utilizes SIMD/AVX technology for extra speed
 - Supports smooth shading based on HSB ➡️  RGB conversion
 
 ---
