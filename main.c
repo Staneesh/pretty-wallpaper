@@ -377,7 +377,7 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 
 	__m128 smooth_color = _mm_set_ps1(0.0f);
 
-	u32 iter_limit = 1000;
+	u32 iter_limit = 10000;
 
 	for(u32 _i = 0; _i < iter_limit; ++_i)
 	{
@@ -414,14 +414,14 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
 	// (From stackoverflow, but tested so its fine.) 
 	smooth_color = _mm_div_ps(smooth_color, _mm_set_ps1(iter_limit));
-	__m128 value = _mm_mul_ps(_mm_set_ps1(10.0f), smooth_color); 
+	__m128 value = _mm_mul_ps(_mm_set_ps1(100.0f), smooth_color); 
 	
 
 	for (i32 i_temp = 3; i_temp >= 0; --i_temp)
 	{
 		struct Color rgb_color = hsb_to_rgb(value[i_temp], 
-				value[i_temp] + 0.2f,
-				value[i_temp]);
+				value[i_temp]*3 + 0.01,
+				1.0f - value[i_temp]);
 		colors[3 - i_temp].red = rgb_color.red;
 		colors[3 - i_temp].blue = rgb_color.blue;
 		colors[3 - i_temp].green = rgb_color.green;
