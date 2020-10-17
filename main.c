@@ -180,24 +180,16 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
 
 		z_real_squared = z_real_scaled * z_real_scaled;
 		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
-		LOG_FLOAT(z_real_squared + z_imaginary_squared);
 
 		//NOTE(stanisz): This computations are used in determining the smooth
 		// value of a color of a given pixel
 		real32 length = sqrt(z_real_squared + z_imaginary_squared);
 		real32 exp_term = exp(-length);
 		smooth_color += exp_term;
-		LOG_FLOAT(exp_term);
 
 		++i;
 	}
 	
-	if (x == 800 && y == 800)
-	{
-		LOG_FLOAT(smooth_color);
-
-		LOG_UINT(i);
-	}
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
 	// (From stackoverflow, but tested so its fine.) 
 	smooth_color /= iteration_limit;
@@ -217,10 +209,6 @@ u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
 	color |= (green << green_bits_to_shift);
 	color |= (blue << blue_bits_to_shift);
 
-	if (x == 800 && y == 800)
-	{
-		LOG_UINT(color);
-	}
 	return color; 
 }
 
@@ -391,14 +379,7 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 
 	u32 iter_limit = 1000;
 
-	u32 _i = 0;
-	if (x == 800 && y == 800)
-	{
-		u32 SADASHDAJ;
-		SADASHDAJ /= 1231;
-
-	}
-	for(; _i < iter_limit; ++_i)
+	for(u32 _i = 0; _i < iter_limit; ++_i)
 	{
 		__m128 temp = _mm_sub_ps(z_real_squared, z_imaginary_squared);
 		__m128 z_re_z_im = _mm_mul_ps(z_real_scaled, z_imaginary_scaled);
@@ -414,26 +395,20 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 		//NOTE(stanisz): This computations are used in determining the smooth
 		// value of a color of a given pixel
 		__m128 length = _mm_sqrt_ps(real_sq_plus_im_sq);
-		__m128 exp_term = exp_ps(negative_m128(&length));
-		smooth_color = _mm_add_ps(smooth_color, exp_term);
-
-
 		__m128 comparison = _mm_cmple_ps(real_sq_plus_im_sq, radius_squared);
 		__m128 lanes_increment = _mm_and_ps(comparison, _mm_set_ps1(1));
+
+		__m128 exp_term = exp_ps(negative_m128(&length));
+		smooth_color = _mm_add_ps(smooth_color, 
+				_mm_mul_ps(exp_term, lanes_increment));
+
+
 		i = _mm_add_ps(i, lanes_increment);
 		u32 mask = _mm_movemask_ps(comparison);
 		if (mask == 0)
 		{
 			break;
 		}
-	}
-	if (x == 800 && y == 800)
-	{
-		LOG_FLOAT(smooth_color[3]);
-		LOG_UINT(_i);
-
-		u32 GDB_STOP = 12323;
-		GDB_STOP /= 127863;
 	}
 	
 	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
@@ -517,10 +492,6 @@ u8 render_strip(struct WorkQueue* work_queue)
 				color |= (green << green_bits_to_shift);
 				color |= (blue << blue_bits_to_shift);
 			
-				if (x == 800 && y == 800)
-				{
-					LOG_UINT(color);
-				}
 				work_queue->pixels[i] = color;
 			}
 
@@ -594,7 +565,7 @@ int main(i32 argc, char** argv)
 		}	
 	}
 
-	work_queue.rand_state = (1 /*time(0)*/ * 997)%100000009;
+	work_queue.rand_state = (time(0) * 997)%100000009;
 		
 	//NOTE(stanisz): these values produce nice images (found on the web).
 	work_queue.c_real = 0.37+cos(work_queue.rand_state*1.23462673423)*0.04;
@@ -602,12 +573,9 @@ int main(i32 argc, char** argv)
 
 	//NOTE(stanisz): number of additional threads to spawn 
 	// (apart from the initial one).
-	u32 num_threads = 1;
+	u32 num_threads = 8;
 	pthread_t thread_ids[100];
 
-			LOG_UINT(get_pixel_color(800, 800,
-						work_queue.width, work_queue.height,
-						work_queue.c_real, work_queue.c_imaginary));
 	//NOTE(stanisz): Fencing - making sure that thread 0 has
 	// finished writing to the memory and that this memory is
 	// now available for reading from the thread that are 
