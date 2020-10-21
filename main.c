@@ -12,10 +12,6 @@
 //NOTE(stanisz): requires stdio.h to be included before this line
 #include "utils.c"
 
-//TODO(stanisz): this define is temporary to make sure, that the code on git compiles
-// and works
-#define AVX_ENABLED 1
-
 struct WorkOrder
 {
 	u32 y_start;
@@ -150,186 +146,65 @@ struct Color random_color(u32* xorshift_state)
 	return result;
 }
 
-u32 get_pixel_color(u32 x, u32 y, u32 width, u32 height,
-		real32 c_real, real32 c_imaginary)
-{
-	u32 color = 0;
-
-	
-	real32 radius = 1.5f;
-	real32 radius_squared = radius * radius;
-
-	real32 z_real_scaled = lerp(-radius, radius, (real32)x / width);
-	real32 z_imaginary_scaled = lerp(-radius, radius, (real32)y / height);
-
-	real32 z_real_squared = z_real_scaled * z_real_scaled;
-	real32 z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
-
-	u32 i = 0;
-	u32 iteration_limit = 1000;
-
-	real32 smooth_color = 0;
-
-	while (z_real_squared + z_imaginary_squared < radius_squared &&
-			i < iteration_limit)
-	{
-		real32 temp = z_real_squared - z_imaginary_squared;
-
-		z_imaginary_scaled = 2.0f * z_real_scaled * z_imaginary_scaled + c_imaginary;
-		z_real_scaled = temp + c_real;
-
-		z_real_squared = z_real_scaled * z_real_scaled;
-		z_imaginary_squared = z_imaginary_scaled * z_imaginary_scaled;
-
-		//NOTE(stanisz): This computations are used in determining the smooth
-		// value of a color of a given pixel
-		real32 length = sqrt(z_real_squared + z_imaginary_squared);
-		real32 exp_term = exp(-length);
-		smooth_color += exp_term;
-
-		++i;
-	}
-	
-	//NOTE(stanisz): after this line, smooth_color is in the interval [0, 1].
-	// (From stackoverflow, but tested so its fine.) 
-	smooth_color /= iteration_limit;
-	real32 value = 10.0f * smooth_color; 
-	struct Color hsb_color = hsb_to_rgb(value, value + 0.2, value);
-
-	u32 red = hsb_color.red;
-	u32 blue = hsb_color.blue;
-	u32 green = hsb_color.green;
-
-	//NOTE(stanisz): color packing is currently linux-specific.	
-	u32 red_bits_to_shift = 16;
-	u32 green_bits_to_shift = 8;
-	u32 blue_bits_to_shift = 0;
-
-	color |= (red << red_bits_to_shift);
-	color |= (green << green_bits_to_shift);
-	color |= (blue << blue_bits_to_shift);
-
-	return color; 
-}
-
-struct CpuInfo
-{
-	u32 sse_version;
-	u32 avx_version;
-};
-
-struct CpuInfo highest_sse_version_supported()
-{
-	struct CpuInfo result = {};
-	//NOTE(stanisz): gather data about the cpu enabling the use of 
-	// __builtin_cpu_supports() and __builtin_cpu_is().
-	__builtin_cpu_init();
-
-	if (__builtin_cpu_supports("sse"))
-	{
-		result.sse_version = 10;
-	}
-	if (__builtin_cpu_supports("sse2"))
-	{
-		result.sse_version = 20;
-	}
-	if (__builtin_cpu_supports("sse3"))
-	{
-		result.sse_version = 30;
-	}
-
-	if (__builtin_cpu_supports("sse4.1"))
-	{
-		result.sse_version = 41;
-	}
-
-	if (__builtin_cpu_supports("sse4.2"))
-	{
-		result.sse_version = 42;
-	}
-
-	if (__builtin_cpu_supports("avx"))
-	{
-		result.avx_version = 10;
-	}
-
-	if (__builtin_cpu_supports("avx2"))
-	{
-		result.avx_version = 20;
-	}
-
-	return result;
-}
-
-typedef __m128 (*mm_set_ps1_type)(float);
-struct VectorFunctionSet128
-{
-	mm_set_ps1_type mm_set_ps1;
-};
-
-struct VectorDataType
-{
-	void* data;
-};
-
-#ifdef AVX_ENABLED
-
+//NOTE(stanisz): this is a function computing wide e^x
+// (from the web)
 __m128 exp_ps(__m128 x) {
-__m128 _ps_exp_hi = _mm_set_ps1(88.3762626647949f);
-__m128 _ps_exp_lo = _mm_set1_ps(-88.3762626647949f);
-__m128 _ps_cephes_LOG2EF = _mm_set1_ps(1.44269504088896341f);
-__m128 _ps_cephes_exp_C1 = _mm_set1_ps(0.693359375f);
-__m128 _ps_cephes_exp_C2 = _mm_set1_ps(-2.12194440e-4f);
-__m128 _ps_cephes_exp_p0 = _mm_set1_ps(1.9875691500E-4f);
-__m128 _ps_cephes_exp_p1 = _mm_set1_ps(1.3981999507E-3f);
-__m128 _ps_cephes_exp_p2 = _mm_set1_ps(8.3334519073E-3f);
-__m128 _ps_cephes_exp_p3 = _mm_set1_ps(4.1665795894E-2f);
-__m128 _ps_cephes_exp_p4 = _mm_set1_ps(1.6666665459E-1f);
-__m128 _ps_cephes_exp_p5 = _mm_set1_ps(5.0000001201E-1f);
+	__m128 _ps_exp_hi = _mm_set_ps1(88.3762626647949f);
+	__m128 _ps_exp_lo = _mm_set1_ps(-88.3762626647949f);
+	__m128 _ps_cephes_LOG2EF = _mm_set1_ps(1.44269504088896341f);
+	__m128 _ps_cephes_exp_C1 = _mm_set1_ps(0.693359375f);
+	__m128 _ps_cephes_exp_C2 = _mm_set1_ps(-2.12194440e-4f);
+	__m128 _ps_cephes_exp_p0 = _mm_set1_ps(1.9875691500E-4f);
+	__m128 _ps_cephes_exp_p1 = _mm_set1_ps(1.3981999507E-3f);
+	__m128 _ps_cephes_exp_p2 = _mm_set1_ps(8.3334519073E-3f);
+	__m128 _ps_cephes_exp_p3 = _mm_set1_ps(4.1665795894E-2f);
+	__m128 _ps_cephes_exp_p4 = _mm_set1_ps(1.6666665459E-1f);
+	__m128 _ps_cephes_exp_p5 = _mm_set1_ps(5.0000001201E-1f);
 
-  __m128 one = _mm_set_ps1(1.0f);
-  __m128 _ps_0p5 = _mm_set_ps1(0.5f);
-  __m128i _pi32_0x7f = _mm_set_epi32(0x7f, 0x7f, 0x7f, 0x7f);
+	__m128 one = _mm_set_ps1(1.0f);
+	__m128 _ps_0p5 = _mm_set_ps1(0.5f);
+	__m128i _pi32_0x7f = _mm_set_epi32(0x7f, 0x7f, 0x7f, 0x7f);
 
-  x = _mm_min_ps(x, _ps_exp_hi);
-  x = _mm_max_ps(x, _ps_exp_lo);
+	x = _mm_min_ps(x, _ps_exp_hi);
+	x = _mm_max_ps(x, _ps_exp_lo);
 
-  /* express exp(x) as exp(g + n*log(2)) */
-  __m128 fx = _mm_mul_ps(x, _ps_cephes_LOG2EF);
-  fx = _mm_add_ps(fx, _ps_0p5);
+	/* express exp(x) as exp(g + n*log(2)) */
+	__m128 fx = _mm_mul_ps(x, _ps_cephes_LOG2EF);
+	fx = _mm_add_ps(fx, _ps_0p5);
 
-  /* how to perform a floorf with SSE: just below */
-  __m128i emm0 = _mm_cvttps_epi32(fx);
-  __m128 tmp  = _mm_cvtepi32_ps(emm0);
-  /* if greater, substract 1 */
-  __m128 mask = _mm_cmpgt_ps(tmp, fx);
-  mask = _mm_and_ps(mask, one);
-  fx = _mm_sub_ps(tmp, mask);
-  tmp = _mm_mul_ps(fx, _ps_cephes_exp_C1);
-  __m128 z = _mm_mul_ps(fx, _ps_cephes_exp_C2);
-  x = _mm_sub_ps(x, _mm_add_ps(tmp, z));
-  z = _mm_mul_ps(x,x);
-  __m128 y = _ps_cephes_exp_p0;
-  y = _mm_mul_ps(y, x);
-  y = _mm_add_ps(y, _ps_cephes_exp_p1);
-  y = _mm_mul_ps(y, x);
-  y = _mm_add_ps(y, _ps_cephes_exp_p2);
-  y = _mm_mul_ps(y, x);
-  y = _mm_add_ps(y, _ps_cephes_exp_p3);
-  y = _mm_mul_ps(y, x);
-  y = _mm_add_ps(y, _ps_cephes_exp_p4);
-  y = _mm_mul_ps(y, x);
-  y = _mm_add_ps(y, _ps_cephes_exp_p5);
-  y = _mm_mul_ps(y, z);
-  y = _mm_add_ps(y, _mm_add_ps(x, one));
+	/* how to perform a floorf with SSE: just below */
+	__m128i emm0 = _mm_cvttps_epi32(fx);
+	__m128 tmp  = _mm_cvtepi32_ps(emm0);
+	/* if greater, substract 1 */
+	__m128 mask = _mm_cmpgt_ps(tmp, fx);
+	mask = _mm_and_ps(mask, one);
+	fx = _mm_sub_ps(tmp, mask);
+	tmp = _mm_mul_ps(fx, _ps_cephes_exp_C1);
+	__m128 z = _mm_mul_ps(fx, _ps_cephes_exp_C2);
+	x = _mm_sub_ps(x, _mm_add_ps(tmp, z));
+	z = _mm_mul_ps(x,x);
+	__m128 y = _ps_cephes_exp_p0;
+	y = _mm_mul_ps(y, x);
+	y = _mm_add_ps(y, _ps_cephes_exp_p1);
+	y = _mm_mul_ps(y, x);
+	y = _mm_add_ps(y, _ps_cephes_exp_p2);
+	y = _mm_mul_ps(y, x);
+	y = _mm_add_ps(y, _ps_cephes_exp_p3);
+	y = _mm_mul_ps(y, x);
+	y = _mm_add_ps(y, _ps_cephes_exp_p4);
+	y = _mm_mul_ps(y, x);
+	y = _mm_add_ps(y, _ps_cephes_exp_p5);
+	y = _mm_mul_ps(y, z);
+	y = _mm_add_ps(y, _mm_add_ps(x, one));
 
-  /* build 2^n */
-  emm0 = _mm_cvttps_epi32(fx);
-  emm0 = _mm_add_epi32(emm0, _pi32_0x7f);
-  emm0 = _mm_slli_epi32(emm0, 23);
-  __m128 pow2n = _mm_castsi128_ps(emm0);
-  y = _mm_mul_ps(y, pow2n);
-  return y;
+	/* build 2^n */
+	emm0 = _mm_cvttps_epi32(fx);
+	emm0 = _mm_add_epi32(emm0, _pi32_0x7f);
+	emm0 = _mm_slli_epi32(emm0, 23);
+	__m128 pow2n = _mm_castsi128_ps(emm0);
+	y = _mm_mul_ps(y, pow2n);
+
+	return y;
 }
 
 __m128 lerp_m128(const __m128* a, const __m128* b, const __m128* t)
@@ -344,10 +219,6 @@ __m128 negative_m128(const __m128* a)
 	return _mm_mul_ps(*a, _mm_set_ps1(-1.0f));
 }
 
-struct Colors
-{
-	u32 values[4];
-};
 //NOTE(stanisz): calculates pixels of coords: 
 // (x, y), (x+1, y), (x+2, y), (x+3, y).
 void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
@@ -416,7 +287,6 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 	smooth_color = _mm_div_ps(smooth_color, _mm_set_ps1(iter_limit));
 	__m128 value = _mm_mul_ps(_mm_set_ps1(100.0f), smooth_color); 
 	
-
 	for (i32 i_temp = 3; i_temp >= 0; --i_temp)
 	{
 		struct Color rgb_color = hsb_to_rgb(value[i_temp], 
@@ -427,7 +297,6 @@ void get_pixel_colors_wide(u32 x, u32 y, u32 width, u32 height,
 		colors[3 - i_temp].green = rgb_color.green;
 	}
 }
-#endif
 
 //NOTE(stanisz): this function performs thread-safe addition of
 // an 'addend' to the 'v'. 
@@ -464,13 +333,7 @@ u8 render_strip(struct WorkQueue* work_queue)
 			u32 array_index = y * work_queue->width + x;
 
 			assert(array_index < work_queue->width * work_queue->height);
-#ifndef AVX_ENABLED
-			work_queue->pixels[array_index] = get_pixel_color(x, y, 
-					work_queue->width, work_queue->height,
-					work_queue->c_real, work_queue->c_imaginary);
 
-			++x;
-#else
 			struct Color colors[4] = {};
 			get_pixel_colors_wide(x, y, work_queue->width, work_queue->height,
 					work_queue->c_real, work_queue->c_imaginary, colors);
@@ -496,7 +359,6 @@ u8 render_strip(struct WorkQueue* work_queue)
 			}
 
 			x+= 4;
-#endif
 		}
 	}
 
